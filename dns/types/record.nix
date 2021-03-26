@@ -10,17 +10,13 @@ let
   inherit (pkgs) lib;
   inherit (lib) const isString mkOption types;
 
-  defaults = {
-    class = "IN";
-    ttl = 24 * 60 * 60;
-  };
-
-  recordType = rsubt:
+  recordType = zone: rsubt:
     let
+      inherit (zone) defaults;
       submodule = types.submodule {
         options = {
           class = mkOption {
-            type = types.enum ["IN"];
+            type = types.enum [ "IN" ];
             default = defaults.class;
             example = "IN";
             description = "Resource record class. Only IN is supported";
@@ -36,8 +32,9 @@ let
     in
       (if rsubt ? fromString then types.either types.str else lib.id) submodule;
 
-  writeRecord = name: rsubt: data:
+  writeRecord = name: zone: rsubt: data:
     let
+      inherit (zone) defaults;
       data' =
         if isString data && rsubt ? fromString
         then defaults // rsubt.fromString data

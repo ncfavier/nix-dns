@@ -17,7 +17,21 @@ let
   rsubtypes = import ./records { inherit pkgs; };
   rsubtypes' = removeAttrs rsubtypes ["SOA"];
 
-  subzoneOptions = {
+  subzoneOptions = config: {
+    defaults = {
+      class = mkOption {
+        type = types.enum [ "IN" ];
+        default = "IN";
+        example = "IN";
+        description = "Resource record class. Only IN is supported";
+      };
+      ttl = mkOption {
+        type = types.ints.unsigned; # TODO: u32
+        default = 24 * 60 * 60;
+        example = 300;
+        description = "Default record caching duration (in seconds)";
+      };
+    };
     subdomains = mkOption {
       type = types.attrsOf subzone;
       default = {};
@@ -33,20 +47,20 @@ let
     };
   } //
     mapAttrs (n: t: mkOption rec {
-      type = types.listOf (recordType t);
+      type = types.listOf (recordType config t);
       default = [];
       example = [ t.example ];
       description = "List of ${t} records for this zone/subzone";
     }) rsubtypes';
 
-  subzone = types.submodule {
-      options = subzoneOptions;
-    };
+  subzone = types.submodule ({ config, ... }: {
+    options = subzoneOptions config;
+  });
 
   writeSubzone = name: zone:
     let
       groupToString = pseudo: subt:
-        concatMapStringsSep "\n" (writeRecord name subt) (zone."${pseudo}");
+        concatMapStringsSep "\n" (writeRecord name zone subt) (zone."${pseudo}");
       groups = mapAttrsToList groupToString rsubtypes';
       groups' = filter (s: s != "") groups;
 
@@ -56,10 +70,10 @@ let
       concatStringsSep "\n\n" groups'
       + optionalString (sub != "") ("\n\n" + sub);
 
-  zone = types.submodule ({name, ...}: {
+  zone = types.submodule ({ name, config, ... }: {
     options = {
       SOA = mkOption rec {
-        type = recordType rsubtypes.SOA;
+        type = recordType config rsubtypes.SOA;
         example = {
           ttl = 24 * 60 * 60;
         } // type.example;
@@ -69,14 +83,15 @@ let
         readOnly = true;
         visible = false;
       };
-    } // subzoneOptions;
+    } // subzoneOptions config;
 
     config = {
-      __toString = zone@{SOA, ...}:
-          ''
-            ${writeRecord name rsubtypes.SOA SOA}
+      __toString = zone@{ SOA, ... }:
+        ''
+          ${writeRecord name zone rsubtypes.SOA SOA}
 
-          '' + writeSubzone name zone + "\n";
+          ${writeSubzone name zone}
+        '';
     };
   });
 
